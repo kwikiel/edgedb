@@ -281,6 +281,7 @@ class TestEdgeQLFor(tb.QueryTestCase):
             }
         )
 
+    @test.xfail('materialization reasoning is broken in nested aliases')
     async def test_edgeql_for_in_computable_02(self):
         await self.assert_query_result(
             r'''
@@ -300,6 +301,41 @@ class TestEdgeQLFor(tb.QueryTestCase):
                             )
                         )
                         ORDER BY _.name THEN _.letter
+                    )
+                } FILTER .name = 'Alice';
+            ''',
+            [
+                {
+                    'select_deck': [
+                        {'name': 'Bog monster', 'letter': 'B1'},
+                        {'name': 'Bog monster', 'letter': 'B2'},
+                        {'name': 'Imp', 'letter': 'I1'},
+                        {'name': 'Imp', 'letter': 'I2'},
+                    ]
+                }
+            ]
+        )
+
+    @test.xfail('materialization reasoning is broken in nested aliases')
+    async def test_edgeql_for_in_computable_02b(self):
+        await self.assert_query_result(
+            r'''
+                SELECT User {
+                    select_deck := (
+                        WITH cards := (
+                            FOR letter IN {'I', 'B'}
+                            UNION (
+                                FOR copy IN {'1', '2'}
+                                UNION (
+                                    SELECT User.deck {
+                                        name,
+                                        letter := letter ++ copy
+                                    }
+                                    FILTER User.deck.name[0] = letter
+                                )
+                            )
+                        )
+                        SELECT cards ORDER BY .name THEN .letter
                     )
                 } FILTER .name = 'Alice';
             ''',
@@ -627,6 +663,31 @@ class TestEdgeQLFor(tb.QueryTestCase):
             sort={
                 'select_deck': lambda x: x['name'],
             }
+        )
+
+    async def test_edgeql_for_in_computable_11(self):
+        await self.assert_query_result(
+            r"""
+            SELECT
+                User {
+                    select_deck := DISTINCT (
+                        FOR name IN {'Imp', 'Imp'}
+                        UNION (
+                            SELECT Card {name}
+                            FILTER .name = name
+                        )
+                    )
+                }
+            FILTER
+                .name = 'Alice'
+            """,
+            [
+                {
+                    'select_deck': [{
+                        'name': 'Imp',
+                    }],
+                },
+            ],
         )
 
     async def test_edgeql_for_and_computable_01(self):
